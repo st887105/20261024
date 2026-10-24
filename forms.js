@@ -40,6 +40,38 @@ const COMMENTS = [
   { key: 'other', label: '其他意見' }
 ];
 
+/* 六大面向檢核圖（共用）：三張表單都以「補充說明」方式呈現，六大面向的 k1–k15 本身即為檢核項目。
+   數據解讀建議僅供填寫時參考，不影響計分。 */
+const SIX_DIM = [
+  { key: 'a1', label: '1. 核心教學活動', items: [
+    { id: 'k1', type: 'check', label: '授課內容是否融入「概念評量」或即時測驗？', hint: '動態評量與成績提升具顯著相關性（r=0.079）。' },
+    { id: 'k2', type: 'check', label: '是否適時導入 AI 學習夥伴進行回饋？', hint: 'AI 學習夥伴與成績提升具顯著正相關，能激發自主學習。' }
+  ]},
+  { key: 'a2', label: '2. 工具選擇使用', items: [
+    { id: 'k3', type: 'check', label: '針對學科特性配置核心平台（如英語題庫、學習吧）？', hint: '特定學科對應平台之在籍完成率與成效有顯著關聯。' },
+    { id: 'k4', type: 'check', label: '整合「作業派發」與「課堂教學」數據佐證？', hint: '此為高頻教學模式，是穩定數位化基礎的關鍵。' }
+  ]},
+  { key: 'a3', label: '3. 學科功能整合', items: [
+    { id: 'k5', type: 'check', label: '是否避免過度沉浸於非學科核心遊戲？', hint: '學習型遊戲等功能應作為誘因而非核心教學。' },
+    { id: 'k6', type: 'check', label: '「貼文牆」課程是否包含學習心得記錄或討論？', hint: '教師應導入討論區、筆記功能或共筆創作等互動功能。' },
+    { id: 'k7', type: 'check', label: '「教學期」課程是否進行知識節點診斷？', hint: '運用診斷工具作為補救教學與個別補強的基礎。' }
+  ]},
+  { key: 'a4', label: '4. 教學互動經營', items: [
+    { id: 'k8', type: 'check', label: '課堂中安排 1–2 次即時互動（如 Kahoot、Padlet 等）？', hint: '短時高頻互動能有效活化教學氣氛。' },
+    { id: 'k9', type: 'check', label: '利用平台進行小組即時討論或同步任務？', hint: '補強自動課程營造愉悅的互動氛圍。' }
+  ]},
+  { key: 'a5', label: '5. 課程任務設計', items: [
+    { id: 'k10', type: 'check', label: '明確定義任務「完成」標準（而非僅止於登入）？', hint: '任務完成度為正向指標；進行中／未完成班與成績呈負相關。' },
+    { id: 'k11', type: 'check', label: '主動關心「開啟但未完成」之學生並針對原因輔導？', hint: '及時介入能協助低參與學生突破學習卡關問題。' },
+    { id: 'k12', type: 'check', label: '設定成就解鎖或進階獎勵機制以維持動能？', hint: '對提升學生持續參與平台任務有顯著吸引效果。' }
+  ]},
+  { key: 'a6', label: '6. 分群學生輔導', items: [
+    { id: 'k13', type: 'check', label: '針對高分群學生：是否有進階挑戰或高效領域材？', hint: '提升數位任務挑戰性，並設「開啟但未完成」卡關點。' },
+    { id: 'k14', type: 'check', label: '針對高效自學者：是否提供自學空間？', hint: '提供彈性自學資源，不強制其進行重複性的低階操作。' },
+    { id: 'k15', type: 'check', label: '針對數位學習深度投入者：是否引導至同儕教學？', hint: '安排擔任數位學伴或進行反思任務，將高投入轉化為深層學習。' }
+  ]}
+];
+
 const FORMS = {
   /* ---------- 115 觀課紀錄表（屏東縣群校數位學習） ---------- */
   f115: {
@@ -48,6 +80,7 @@ const FORMS = {
     hasDevice: true,
     modes: MODES,
     comments: COMMENTS,
+    supplement: SIX_DIM,
     sections: [
       { key: 'self', label: '學生自學（個人）', items: [
         { id: 'self1', type: 'score', label: '完成預習，並知道學習目標', hint: '學生進入課堂時能否說出本節目標？' },
@@ -82,6 +115,7 @@ const FORMS = {
     checkText: '已完成此項',
     legend: '🟢 綠燈：鼓勵使用（AI 作為學習輔助工具）　🟡 黃燈：可使用但需查核並標示　🔴 紅燈：不可使用（違反 AI 倫理與學術誠信）',
     comments: COMMENTS,
+    supplement: SIX_DIM,
     sections: [
       { key: 'prep', label: '課程上課之備課階段', items: [
         { id: 'ai_p1', type: 'light', label: '教材準備', hint: '確認並準備所有數位教材和資源，如影片、互動式教學工具等。' },
@@ -129,40 +163,12 @@ const FORMS = {
     ]
   },
 
-  /* ---------- 六大面向檢核圖 ---------- */
+  /* ---------- 六大面向檢核圖（獨立表單，檢核項目即 SIX_DIM） ---------- */
   f6: {
     name: '六大面向檢核圖',
     hintLabel: '數據解讀建議',
     checkText: '達成',
     comments: COMMENTS,
-    sections: [
-      { key: 'a1', label: '1. 核心教學活動', items: [
-        { id: 'k1', type: 'check', label: '授課內容是否融入「概念評量」或即時測驗？', hint: '動態評量與成績提升具顯著相關性（r=0.079）。' },
-        { id: 'k2', type: 'check', label: '是否適時導入 AI 學習夥伴進行回饋？', hint: 'AI 學習夥伴與成績提升具顯著正相關，能激發自主學習。' }
-      ]},
-      { key: 'a2', label: '2. 工具選擇使用', items: [
-        { id: 'k3', type: 'check', label: '針對學科特性配置核心平台（如英語題庫、學習吧）？', hint: '特定學科對應平台之在籍完成率與成效有顯著關聯。' },
-        { id: 'k4', type: 'check', label: '整合「作業派發」與「課堂教學」數據佐證？', hint: '此為高頻教學模式，是穩定數位化基礎的關鍵。' }
-      ]},
-      { key: 'a3', label: '3. 學科功能整合', items: [
-        { id: 'k5', type: 'check', label: '是否避免過度沉浸於非學科核心遊戲？', hint: '學習型遊戲等功能應作為誘因而非核心教學。' },
-        { id: 'k6', type: 'check', label: '「貼文牆」課程是否包含學習心得記錄或討論？', hint: '教師應導入討論區、筆記功能或共筆創作等互動功能。' },
-        { id: 'k7', type: 'check', label: '「教學期」課程是否進行知識節點診斷？', hint: '運用診斷工具作為補救教學與個別補強的基礎。' }
-      ]},
-      { key: 'a4', label: '4. 教學互動經營', items: [
-        { id: 'k8', type: 'check', label: '課堂中安排 1–2 次即時互動（如 Kahoot、Padlet 等）？', hint: '短時高頻互動能有效活化教學氣氛。' },
-        { id: 'k9', type: 'check', label: '利用平台進行小組即時討論或同步任務？', hint: '補強自動課程營造愉悅的互動氛圍。' }
-      ]},
-      { key: 'a5', label: '5. 課程任務設計', items: [
-        { id: 'k10', type: 'check', label: '明確定義任務「完成」標準（而非僅止於登入）？', hint: '任務完成度為正向指標；進行中／未完成班與成績呈負相關。' },
-        { id: 'k11', type: 'check', label: '主動關心「開啟但未完成」之學生並針對原因輔導？', hint: '及時介入能協助低參與學生突破學習卡關問題。' },
-        { id: 'k12', type: 'check', label: '設定成就解鎖或進階獎勵機制以維持動能？', hint: '對提升學生持續參與平台任務有顯著吸引效果。' }
-      ]},
-      { key: 'a6', label: '6. 分群學生輔導', items: [
-        { id: 'k13', type: 'check', label: '針對高分群學生：是否有進階挑戰或高效領域材？', hint: '提升數位任務挑戰性，並設「開啟但未完成」卡關點。' },
-        { id: 'k14', type: 'check', label: '針對高效自學者：是否提供自學空間？', hint: '提供彈性自學資源，不強制其進行重複性的低階操作。' },
-        { id: 'k15', type: 'check', label: '針對數位學習深度投入者：是否引導至同儕教學？', hint: '安排擔任數位學伴或進行反思任務，將高投入轉化為深層學習。' }
-      ]}
-    ]
+    sections: SIX_DIM
   }
 };
