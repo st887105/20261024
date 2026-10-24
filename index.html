@@ -34,14 +34,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#app').innerHTML = `
     <section class="card">
       <h2>請先登入</h2>
-      <p class="muted">請使用 Google 帳號登入，系統會以此帳號記錄你的觀課紀錄。</p>
-      <div id="gbtn"></div>
+      <p class="muted">請輸入學校、姓名與日期，系統會以此記錄你的觀課紀錄。</p>
+      <div id="lg"></div>
     </section>`;
-  Auth.mount($('#gbtn'), () => { USER = Auth.claims(); start(); });
+  renderLogin($('#lg'), {}, () => { USER = Auth.claims(); start(); });
 });
 
 function start() {
-  $('#who').textContent = USER.name;
+  $('#who').textContent = USER.name + '｜' + USER.school;
   home();
 }
 
@@ -115,7 +115,8 @@ function initState(form, rec) {
   S.status = rec ? rec.status : 'draft';
   S.scan = null;
   S.meta = Object.assign({
-    school: '車城國小', teacher: USER.name, observer: '', date: todayStr(), school_year: '115',
+    school: USER.school || '車城國小', teacher: USER.name, observer: '',
+    date: USER.date || todayStr(), school_year: '115',
     class_name: '', student_count: '', subject: '', unit: '', session_no: '', session_total: '',
     device: [], platform: [], mode: ''
   }, rec ? rec.meta : {});
