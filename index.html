@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>車城國小｜線上觀課紀錄</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<header class="top">
+  <button class="btn ghost" id="back" hidden>←</button>
+  <h1>車城國小｜線上觀課紀錄</h1>
+  <span class="muted small" id="who" style="cursor:pointer" title="點一下登出"></span>
+</header>
+
+<main id="app"></main>
+
+<div class="actionbar" id="actions" hidden></div>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="forms.js"></script>
+<script src="common.js"></script>
+<script>
+const S = { view: 'home', id: null, form: null, status: 'draft', meta: {}, vals: {}, chk: {}, notes: {}, comments: {}, scan: null };
+let USER = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('#app').addEventListener('click', onClick);
+  $('#app').addEventListener('input', onInput);
+  $('#who').onclick = () => { if (USER && confirm('要登出嗎？')) Auth.signOut(); };
+  USER = Auth.claims();
+  if (USER) return start();
+  $('#app').innerHTML = `
+    <section class="card">
+      <h2>請先登入</h2>
+      <p class="muted">請使用 Google 帳號登入，系統會以此帳號記錄你的觀課紀錄。</p>
+      <div id="gbtn"></div>
+    </section>`;
+  Auth.mount($('#gbtn'), () => { USER = Auth.claims(); start(); });
+});
+
+function start() {
+  $('#who').textContent = USER.name;
+  home();
+}
+
+/* ========== 首頁 ========== */
+
+function home() {
+  S.view = 'home';
+  $('#back').hidden = true;
+  $('#actions').hidden = true;
+  $('#app').innerHTML = `
+    <section class="card">
+      <h2>新增紀錄</h2>
+      <label for="formSel">選擇觀課表單</label>
+      <select id="formSel">
+        ${Object.entries(FORMS).map(([k, f]) => `<option value="${k}">${esc(f.name)}</option>`).join('')}
+      </select>
+      <div class="chips" style="margin-top:12px">
+        <button class="btn primary" id="newBtn">✏️ 線上填寫</button>
+        <label class="btn" style="display:inline-flex;align-items:center;cursor:pointer">📷 上傳紙本（OCR）
+          <input type="file" id="ocrFile" accept="image/*" hidden>
+        </label>
+      </div>
+      <p class="muted small">紙本上傳後會自動辨識成草稿，請逐項校對後再儲存或完成。</p>
+    </section>
+    <section class="card">
+      <h2>我的紀錄</h2>
+      <div id="list" class="muted">載入中…</div>
+    </section>`;
+  $('#newBtn').onclick = () => newRecord($('#formSel').value);
+  $('#ocrFile').onchange = e => {
+    const f = e.target.files[0];
+    if (f) runOcr(f, $('#formSel').value);
+    e.target.value = '';
+  };
+  loadList();
+}
+
+async function loadList() {
+  try {
+    const j = await API.call('myRecords');
+    $('#list').innerHTML = j.rows.length
+      ? j.rows.map(r => `
+          <div class="rec" data-id="${esc(r.record_id)}">
+            <div>
+              <b>${esc(r.date)}　${esc((FORMS[r.form] || {}).name || '')}</b>
+              <div class="muted small">${esc(r.subject)}　${esc(r.unit)}　${r.status === 'final' ? '✅ 已完成' : '📝 草稿'}</div>
+            </div>
+            <span>›</span>
+          </div>`).join('')
+      : '<p class="muted">尚無紀錄</p>';
+    document.querySelectorAll('.rec').forEach(el => el.onclick = () => openRecord(el.dataset.id));
+  } catch (e) {
+    $('#list').textContent = '讀取失敗：' + e.message;
+  }
+}
+
+async function openRecord(id) {
+  try {
+    const j = await API.call('getRecord', { record_id: id });
+    initState(j.record.form, j.record);
+    openEditorView();
+  } catch (e) { toast(e.message); }
+}
+
+/* ========== 狀態 ========== */
+
+function initState(form, rec) {
+  S.view = 'edit';
+  S.form = form;
+  S.id = rec ? rec.id : null;
+  S.status = rec ? rec.status : 'draft';
+  S.scan = null;
+  S.meta = Object.assign({
+    school: '車城國小', teacher: USER.name, observer: '', date: todayStr(), school_year: '115',
+    class_name: '', student_count: '', subject: '', unit: '', session_no: '', session_total: '',
+    device: [], platform: [], mode: ''
+  }, rec ? rec.meta : {});
+  S.meta.device = S.meta.device || [];
+  S.meta.platform = S.meta.platform || [];
+  S.vals = {}; S.chk = {}; S.notes = {};
+  S.comments = Object.assign({}, (rec && rec.data && rec.data.comments) || {});
+  if (rec) {
+    (rec.items || []).forEach(i => {
+      if (i.item_id.endsWith('_chk')) S.chk[i.item_id.slice(0, -4)] = !!i.value;
+      else {
+        S.vals[i.item_id] = i.value;
+        if (i.note) S.notes[i.item_id] = i.note;
+      }
+    });
+  }
+}
+
+function newRecord(form) {
+  initState(form, null);
+  openEditorView();
+}
+
+function openEditorView() {
+  $('#back').hidden = false;
+  $('#back').onclick = home;
+  renderEditor();
+  renderActions();
+}
+
+/* ========== 編輯畫面 ========== */
+
+function renderEditor() {
+  const F = FORMS[S.form];
+  const hf = HEADER_FIELDS.map(f =>
+    `<div><label>${f.l}</label><input type="${f.t || 'text'}" data-meta="${f.k}" value="${esc(S.meta[f.k] ?? '')}"></div>`
+  ).join('');
+
+  const chipGroup = (key, label, opts) => `
+    <div style="margin-top:14px"><label>${label}</label>
+      <div class="chips">${opts.map(o => `<button class="chip ${(S.meta[key] || []).includes(o) ? 'on' : ''}" data-multi="${key}" data-val="${esc(o)}">${esc(o)}</button>`).join('')}</div>
+    </div>`;
+
+  const modeBlock = F.modes ? `
+    <div style="margin-top:14px"><label>教學模式（本次觀察到的模式）</label>
+      <div class="chips">${F.modes.map(m => `<button class="chip ${S.meta.mode === m.id ? 'on' : ''}" data-mode="${esc(m.id)}">${esc(m.id)}</button>`).join('')}</div>
+      <p class="muted small" id="modeDesc">${esc((F.modes.find(m => m.id === S.meta.mode) || {}).desc || '')}</p>
+    </div>` : '';
+
+  const devBlock = F.hasDevice
+    ? chipGroup('device', '載具', DEVICES) + chipGroup('platform', '數位學習平臺', PLATFORMS)
+    : '';
+
+  const secs = F.sections.map((sec, si) => `
+    <details ${si === 0 ? 'open' : ''}>
+      <summary>${esc(sec.label)}</summary>
+      <div class="items">
+        ${sec.cols ? `<p class="muted small">${sec.cols.map(c => c.k + '＝' + c.t).join('　')}</p>` : ''}
+        ${sec.items.map(it => itemHtml(sec, it, F)).join('')}
+      </div>
+    </details>`).join('');
+
+  const com = F.comments ? `
+    <section class="card"><h2>綜合意見</h2>
+      ${F.comments.map(c => `
+        <label>${esc(c.label)}${c.hint ? `<span class="muted small">（${esc(c.hint)}）</span>` : ''}</label>
+        <textarea data-comment="${c.key}" rows="2">${esc(S.comments[c.key] || '')}</textarea>
+        <div style="height:10px"></div>`).join('')}
+    </section>` : '';
+
+  $('#app').innerHTML = `
+    <section class="card">
+      <h2>${esc(F.name)}</h2>
+      ${F.legend ? `<div class="notice">${esc(F.legend)}</div>` : ''}
+      <div class="grid">${hf}</div>
+      ${modeBlock}
+      ${devBlock}
+    </section>
+    ${secs}
+    ${com}`;
+}
+
+function itemHtml(sec, it, F) {
+  const id = it.id;
+  let ctrl = '';
+  if (it.type === 'score') {
+    ctrl = `<div class="scores">${[0, 1, 2, 3, 4, 5].map(n =>
+      `<button class="score ${S.vals[id] === n ? 'on' : ''}" data-score="${id}" data-n="${n}">${n}</button>`).join('')}</div>`;
+  } else if (it.type === 'check') {
+    ctrl = `<label class="check"><input type="checkbox" data-check="${id}" ${S.vals[id] ? 'checked' : ''}> ${esc(F.checkText || '符合')}</label>`;
+  } else if (it.type === 'light') {
+    ctrl = `<div class="lights">${LIGHTS.map(l =>
+      `<button class="light ${S.vals[id] === l.k ? 'on' : ''}" data-light="${id}" data-k="${l.k}">${l.e} ${l.t}</button>`).join('')}</div>
+      <label class="check"><input type="checkbox" data-chk="${id}" ${S.chk[id] ? 'checked' : ''}> ${esc(F.checkText || '已完成此項')}</label>`;
+  } else if (it.type === 'matrix') {
+    const arr = S.vals[id] || [];
+    ctrl = `<div class="matrix">${sec.cols.map(c =>
+      `<button class="pill ${arr.includes(c.k) ? 'on' : ''}" data-mx="${id}" data-k="${c.k}">${c.k}</button>`).join('')}</div>`;
+  }
+  const tip = it.hint ? `<button class="tipbtn" data-tip aria-label="說明">ⓘ</button>` : '';
+  const tipBox = it.hint ? `<div class="tip" hidden>${esc(F.hintLabel || '觀察重點')}：${esc(it.hint)}</div>` : '';
+  return `
+    <div class="item">
+      <div class="item-top"><span class="item-name">${esc(it.label)}</span>${tip}</div>
+      ${tipBox}
+      ${ctrl}
+      <details class="note"><summary>觀察描述</summary>
+        <textarea data-note="${id}" rows="2">${esc(S.notes[id] || '')}</textarea>
+      </details>
+    </div>`;
+}
+
+function renderActions() {
+  const a = $('#actions');
+  a.hidden = false;
+  a.innerHTML = `
+    ${S.id && S.status === 'final' ? '<button class="btn" id="pdfBtn">下載 PDF</button>' : ''}
+    <button class="btn" id="saveBtn">儲存草稿</button>
+    <button class="btn primary" id="finBtn">完成並下載 PDF</button>`;
+  $('#saveBtn').onclick = () => saveNow(false, false);
+  $('#finBtn').onclick = () => saveNow(true, false);
+  const p = $('#pdfBtn');
+  if (p) p.onclick = downloadPdf;
+}
+
+/* ========== 事件 ========== */
+
+function onClick(e) {
+  const t = e.target.closest('button');
+  if (!t) return;
+  const d = t.dataset;
+
+  if (d.tip !== undefined) {
+    const box = t.closest('.item').querySelector('.tip');
+    box.hidden = !box.hidden;
+    return;
+  }
+  if (d.score !== undefined) {
+    const id = d.score, n = +d.n;
+    S.vals[id] = S.vals[id] === n ? null : n;
+    setOn(t.parentElement, b => b.dataset.score === id && S.vals[id] === +b.dataset.n);
+    return changed();
+  }
+  if (d.light !== undefined) {
+    const id = d.light;
+    S.vals[id] = S.vals[id] === d.k ? '' : d.k;
+    setOn(t.parentElement, b => b.dataset.light === id && b.dataset.k === S.vals[id]);
+    return changed();
+  }
+  if (d.mx !== undefined) {
+    const id = d.mx;
+    const set = new Set(S.vals[id] || []);
+    set.has(d.k) ? set.delete(d.k) : set.add(d.k);
+    S.vals[id] = [...set];
+    t.classList.toggle('on');
+    return changed();
+  }
+  if (d.mode !== undefined) {
+    S.meta.mode = S.meta.mode === d.mode ? '' : d.mode;
+    setOn(t.parentElement, b => b.dataset.mode === S.meta.mode);
+    const m = FORMS[S.form].modes.find(x => x.id === S.meta.mode);
+    $('#modeDesc').textContent = m ? m.desc : '';
+    return changed();
+  }
+  if (d.multi !== undefined) {
+    const arr = S.meta[d.multi] || [];
+    const i = arr.indexOf(d.val);
+    i > -1 ? arr.splice(i, 1) : arr.push(d.val);
+    S.meta[d.multi] = arr;
+    t.classList.toggle('on');
+    return changed();
+  }
+}
+
+function onInput(e) {
+  const t = e.target;
+  if (t.dataset.meta !== undefined) {
+    S.meta[t.dataset.meta] = t.type === 'number' ? (t.value === '' ? '' : Number(t.value)) : t.value;
+    return changed();
+  }
+  if (t.dataset.check !== undefined) { S.vals[t.dataset.check] = t.checked; return changed(); }
+  if (t.dataset.chk !== undefined) { S.chk[t.dataset.chk] = t.checked; return changed(); }
+  if (t.dataset.note !== undefined) { S.notes[t.dataset.note] = t.value; return changed(); }
+  if (t.dataset.comment !== undefined) { S.comments[t.dataset.comment] = t.value; return changed(); }
+}
+
+function setOn(container, pred) {
+  container.querySelectorAll('button').forEach(b => b.classList.toggle('on', pred(b)));
+}
+
+const autosave = debounce(() => {
+  if (S.view === 'edit' && S.meta.subject && S.meta.teacher) saveNow(false, true);
+}, 1500);
+function changed() { autosave(); }
+
+/* ========== 儲存與下載 ========== */
+
+function payload(status) {
+  const F = FORMS[S.form];
+  const items = [];
+  F.sections.forEach(sec => sec.items.forEach(it => {
+    const base = { group: sec.label, item_id: it.id, item_label: it.label, note: S.notes[it.id] || '' };
+    if (it.type === 'score') items.push({ ...base, value: S.vals[it.id] ?? '' });
+    else if (it.type === 'check') items.push({ ...base, value: !!S.vals[it.id] });
+    else if (it.type === 'light') {
+      items.push({ ...base, value: S.vals[it.id] || '' });
+      items.push({ group: sec.label, item_id: it.id + '_chk', item_label: it.label + '（已完成）', value: !!S.chk[it.id], note: '' });
+    } else if (it.type === 'matrix') items.push({ ...base, value: S.vals[it.id] || [] });
+  }));
+  return {
+    record_id: S.id,
+    form: S.form,
+    status,
+    meta: { ...S.meta, mode: S.meta.mode || '' },
+    data: { comments: S.comments },
+    items,
+    scan_file_id: S.scan,
+    source: S.scan ? 'ocr' : 'manual'
+  };
+}
+
+function saveNow(final, silent) {
+  return enqueue(() => doSave(final, silent));
+}
+
+async function doSave(final, silent) {
+  if (!S.meta.subject || !S.meta.teacher) {
+    if (!silent) toast('請至少填寫教學者與學習領域／科目');
+    return;
+  }
+  if (final && !S.meta.unit) return toast('完成前請填寫單元');
+  if (final && !confirm('送出並產生 PDF？完成後仍可再修改並重新送出。')) return;
+  try {
+    const j = await API.call('saveRecord', payload(final ? 'final' : 'draft'));
+    S.id = j.record_id;
+    S.status = j.status;
+    S.scan = null;
+    renderActions();
+    if (final) {
+      await downloadPdf();
+      toast('已完成，PDF 已下載');
+    } else {
+      toast(silent ? '已自動存檔' : '已儲存草稿');
+    }
+  } catch (err) {
+    toast('儲存失敗：' + err.message);
+  }
+}
+
+async function downloadPdf() {
+  try {
+    const j = await API.call('pdf', { record_id: S.id });
+    downloadB64(j.base64, j.filename);
+  } catch (e) { toast(e.message); }
+}
+
+/* ========== 紙本 OCR ========== */
+
+function schemaOf(form) {
+  const out = [];
+  FORMS[form].sections.forEach(sec => sec.items.forEach(it =>
+    out.push({ item_id: it.id, label: it.label, type: it.type })));
+  return out;
+}
+
+function imageToJpegB64(file, max) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * s);
+      c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      res(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => rej(new Error('無法讀取圖片'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function runOcr(file, form) {
+  $('#app').innerHTML = `
+    <section class="card">
+      <h2>辨識中…</h2>
+      <p class="muted">請稍候，辨識完成後會自動帶入表單。</p>
+      <div class="skel" style="width:60%"></div>
+      <div class="skel"></div>
+      <div class="skel" style="width:80%"></div>
+    </section>`;
+  try {
+    const b64 = await imageToJpegB64(file, 1600);
+    const j = await API.call('ocr', { imageBase64: b64, mimeType: 'image/jpeg', schema: schemaOf(form) });
+    initState(form, null);
+    applyOcr(j.result || {});
+    S.scan = j.scan_file_id;
+    openEditorView();
+    $('#app').insertAdjacentHTML('afterbegin',
+      `<div class="notice">OCR 草稿已帶入，請逐項校對後再儲存或完成。辨識可能有誤，尤其是手寫數字與勾選。</div>`);
+    toast('辨識完成，請校對');
+  } catch (e) {
+    toast('辨識失敗：' + e.message);
+    home();
+  }
+}
+
+function applyOcr(r) {
+  const F = FORMS[S.form];
+  Object.entries(r.meta || {}).forEach(([k, v]) => {
+    if (v !== '' && v != null && HEADER_FIELDS.some(h => h.k === k)) S.meta[k] = v;
+  });
+  const idx = new Map();
+  F.sections.forEach(sec => sec.items.forEach(it => idx.set(it.id, { it, sec })));
+
+  (r.items || []).forEach(o => {
+    const hit = idx.get(o.item_id);
+    if (!hit) return;
+    const { it, sec } = hit;
+    if (it.type === 'score') {
+      const n = Number(o.value);
+      if (Number.isInteger(n) && n >= 0 && n <= 5) S.vals[it.id] = n;
+    } else if (it.type === 'check') {
+      S.vals[it.id] = o.value === true || o.value === 'true';
+    } else if (it.type === 'light') {
+      if (LIGHTS.some(l => l.k === o.value)) S.vals[it.id] = o.value;
+      S.chk[it.id] = !!S.vals[it.id];
+    } else if (it.type === 'matrix') {
+      const letters = Array.isArray(o.value) ? o.value : String(o.value || '').split(/[,、\s]+/);
+      S.vals[it.id] = letters.filter(x => sec.cols.some(c => c.k === x));
+    }
+    if (o.note) S.notes[it.id] = o.note;
+  });
+
+  Object.entries(r.comments || {}).forEach(([k, v]) => { if (v) S.comments[k] = v; });
+}
+</script>
+</body>
+</html>
