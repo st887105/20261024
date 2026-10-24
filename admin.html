@@ -9,7 +9,7 @@
 <body>
 <header class="top">
   <h1>車城國小｜線上觀課紀錄｜講師後台</h1>
-  <span class="muted small" id="who"></span>
+  <span class="muted small" id="who" style="cursor:pointer" title="點一下登出"></span>
 </header>
 
 <main id="app"><section class="card"><p class="muted">載入中…</p></section></main>
@@ -36,25 +36,33 @@ let LAST_STATS = null;
 let CUR = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+  $('#who').onclick = () => { if (confirm('要登出講師後台嗎？')) Auth.signOut(); };
   USER = Auth.claims();
-  if (USER) return check();
+  if (USER && sessionStorage.getItem('adminPw')) {
+    $('#who').textContent = USER.name;
+    return check();
+  }
   $('#app').innerHTML = `
     <section class="card">
-      <h2>講師後台</h2>
-      <p class="muted">請使用講師帳號登入。</p>
-      <div id="gbtn"></div>
+      <h2>講師後台登入</h2>
+      <p class="muted">請輸入學校、姓名、日期與講師後台密碼。</p>
+      <div id="lg"></div>
     </section>`;
-  Auth.mount($('#gbtn'), () => { USER = Auth.claims(); check(); });
+  renderLogin($('#lg'), { password: true }, () => {
+    USER = Auth.claims();
+    $('#who').textContent = USER.name;
+    check();
+  });
 });
 
 async function check() {
   try {
     const j = await API.call('me');
     if (!j.isAdmin) {
-      $('#app').innerHTML = `<section class="card"><h2>沒有權限</h2><p class="muted">此帳號不在講師名單內。</p></section>`;
+      sessionStorage.removeItem('adminPw');
+      $('#app').innerHTML = `<section class="card"><h2>沒有權限</h2><p class="muted">講師密碼錯誤，請重新登入。</p></section>`;
       return;
     }
-    $('#who').textContent = USER.email;
     ui();
   } catch (e) {
     $('#app').innerHTML = `<section class="card">${esc(e.message)}</section>`;

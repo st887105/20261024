@@ -46,49 +46,77 @@ function saveText(name, text, mime) {
   a.click();
 }
 
-/* ---------- 登入（Google Identity Services） ---------- */
+/* ---------- 登入狀態（學校＋姓名＋日期，存於本分頁的 sessionStorage） ---------- */
 
 const Auth = {
   claims() {
-    const t = sessionStorage.getItem('idToken');
-    if (!t) return null;
-    try {
-      const p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-      if (p.exp * 1000 < Date.now()) { sessionStorage.removeItem('idToken'); return null; }
-      return { email: p.email, name: p.name || p.email };
-    } catch (e) { return null; }
+    try { return JSON.parse(sessionStorage.getItem('loginUser')) || null; } catch (e) { return null; }
   },
-  mount(el, onSignedIn) {
-    const go = () => {
-      google.accounts.id.initialize({
-        client_id: APP_CONFIG.CLIENT_ID,
-        callback: r => { sessionStorage.setItem('idToken', r.credential); onSignedIn(); }
-      });
-      google.accounts.id.renderButton(el, { theme: 'filled_blue', size: 'large', text: 'signin_with', shape: 'pill', locale: 'zh-TW' });
-    };
-    if (window.google && google.accounts) return go();
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.async = true;
-    s.onload = go;
-    document.head.appendChild(s);
+  save(u) {
+    sessionStorage.setItem('loginUser', JSON.stringify(u));
   },
   signOut() {
-    sessionStorage.removeItem('idToken');
+    sessionStorage.clear();
     location.reload();
   }
 };
+
+/**
+ * 渲染登入表單。
+ * opts.password：true 時為講師後台，需輸入講師密碼並向後端驗證。
+ * onOk：登入成功後呼叫。
+ */
+function renderLogin(el, opts, onOk) {
+  el.innerHTML = `
+    <label>學校</label>
+    <input type="text" id="lgSchool" value="${esc(opts.school || '車城國小')}" maxlength="30">
+    <label style="margin-top:10px">姓名</label>
+    <input type="text" id="lgName" maxlength="20" placeholder="請輸入姓名">
+    <label style="margin-top:10px">日期</label>
+    <input type="date" id="lgDate" value="${todayStr()}">
+    ${opts.password ? `<label style="margin-top:10px">講師後台密碼</label><input type="password" id="lgPw">` : ''}
+    <div style="margin-top:14px"><button class="btn primary" id="lgBtn" style="width:100%">登入</button></div>
+    <p class="notice" id="lgErr" hidden></p>`;
+
+  const showErr = msg => { const e = $('#lgErr'); e.textContent = msg; e.hidden = false; };
+
+  $('#lgBtn').onclick = async () => {
+    const name = $('#lgName').value.trim();
+    const school = $('#lgSchool').value.trim() || '車城國小';
+    const date = $('#lgDate').value || todayStr();
+    if (!name) return showErr('請輸入姓名');
+
+    Auth.save({ school, name, date });
+
+    if (opts.password) {
+      sessionStorage.setItem('adminPw', $('#lgPw').value);
+      try {
+        const j = await API.call('me');
+        if (!j.isAdmin) throw new Error('講師密碼錯誤');
+      } catch (e) {
+        sessionStorage.removeItem('adminPw');
+        return showErr(e.message);
+      }
+    }
+    onOk();
+  };
+}
 
 /* ---------- API 呼叫 ---------- */
 
 const API = {
   async call(action, payload = {}) {
-    const idToken = sessionStorage.getItem('idToken') || '';
-    if (!idToken) throw new Error('請先登入');
+    const user = Auth.claims();
+    if (!user) throw new Error('請先登入');
     const res = await fetch(APP_CONFIG.API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, idToken, payload })
+      body: JSON.stringify({
+        action,
+        user: { school: user.school, name: user.name },
+        adminPw: sessionStorage.getItem('adminPw') || '',
+        payload
+      })
     });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '發生錯誤');
