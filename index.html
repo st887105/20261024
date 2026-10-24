@@ -187,6 +187,7 @@ function renderEditor() {
         <div style="height:10px"></div>`).join('')}
     </section>` : '';
 
+  const sup = F.supplement ? renderSupplement(F.supplement) : '';
   $('#app').innerHTML = `
     <section class="card">
       <h2>${esc(F.name)}</h2>
@@ -195,8 +196,24 @@ function renderEditor() {
       ${modeBlock}
       ${devBlock}
     </section>
+    ${sup}
     ${secs}
     ${com}`;
+}
+
+// 六大面向檢核圖：唯讀補充說明，供填寫時參考，不計分、不儲存
+function renderSupplement(dims) {
+  const body = dims.map(d => `
+    <h3>${esc(d.label)}</h3>
+    <ul class="sup-list">
+      ${d.items.map(it => `<li><b>${esc(it.label)}</b><br><span class="muted small">數據解讀建議：${esc(it.hint)}</span></li>`).join('')}
+    </ul>`).join('');
+  return `
+    <details class="card sup">
+      <summary><b>六大面向檢核圖（補充說明，供參考，不計分）</b></summary>
+      <p class="muted small">依屏東縣數位學習推動辦公室之數位教學檢核面向整理，填寫時可對照參考。</p>
+      ${body}
+    </details>`;
 }
 
 function itemHtml(sec, it, F) {
