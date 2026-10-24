@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>車城國小｜線上觀課紀錄｜講師後台</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<header class="top">
+  <h1>車城國小｜線上觀課紀錄｜講師後台</h1>
+  <span class="muted small" id="who"></span>
+</header>
+
+<main id="app"><section class="card"><p class="muted">載入中…</p></section></main>
+
+<dialog id="dlg">
+  <div id="dlgBody"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+    <button class="btn" id="dlgPdf">下載 PDF</button>
+    <button class="btn primary" id="dlgClose">關閉</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="forms.js"></script>
+<script src="common.js"></script>
+<script>
+let USER = null;
+let TAB = 'day';
+let DAY = null;
+let FILTERS = { school_year: '115', status: 'final' };
+let LAST_STATS = null;
+let CUR = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  USER = Auth.claims();
+  if (USER) return check();
+  $('#app').innerHTML = `
+    <section class="card">
+      <h2>講師後台</h2>
+      <p class="muted">請使用講師帳號登入。</p>
+      <div id="gbtn"></div>
+    </section>`;
+  Auth.mount($('#gbtn'), () => { USER = Auth.claims(); check(); });
+});
+
+async function check() {
+  try {
+    const j = await API.call('me');
+    if (!j.isAdmin) {
+      $('#app').innerHTML = `<section class="card"><h2>沒有權限</h2><p class="muted">此帳號不在講師名單內。</p></section>`;
+      return;
+    }
+    $('#who').textContent = USER.email;
+    ui();
+  } catch (e) {
+    $('#app').innerHTML = `<section class="card">${esc(e.message)}</section>`;
+  }
+}
+
+/* ========== 篩選與分頁 ========== */
+
+function ui() {
+  $('#app').innerHTML = `
+    <section class="card">
+      <div class="grid">
+        <div><label>學年</label><input type="text" data-f="school_year" value="${esc(FILTERS.school_year || '')}"></div>
+        <div><label>學校</label><input type="text" data-f="school" value="${esc(FILTERS.school || '')}"></div>
+        <div><label>教學者</label><input type="text" data-f="teacher" value="${esc(FILTERS.teacher || '')}"></div>
+        <div><label>學習領域／科目</label><input type="text" data-f="subject" value="${esc(FILTERS.subject || '')}"></div>
+        <div><label>表單</label>
+          <select data-f="form"><option value="">全部</option>
+            ${Object.entries(FORMS).map(([k, f]) => `<option value="${k}" ${FILTERS.form === k ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}
+          </select></div>
+        <div><label>教學模式</label>
+          <select data-f="mode"><option value="">全部</option>
+            ${MODES.map(m => `<option ${FILTERS.mode === m.id ? 'selected' : ''}>${esc(m.id)}</option>`).join('')}
+          </select></div>
+        <div><label>開始日期</label><input type="date" data-f="dateFrom" value="${esc(FILTERS.dateFrom || '')}"></div>
+        <div><label>結束日期</label><input type="date" data-f="dateTo" value="${esc(FILTERS.dateTo || '')}"></div>
+        <div><label>狀態</label>
+          <select data-f="status">
+            <option value="final" ${FILTERS.status === 'final' ? 'selected' : ''}>已完成</option>
+            <option value="" ${!FILTERS.status ? 'selected' : ''}>全部（含草稿）</option>
+          </select></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button class="btn" id="resetF">清除篩選</button>
+        <button class="btn primary" id="applyF">套用篩選</button>
+      </div>
+    </section>
+    <div class="tabs">
+      <button class="btn tab" data-tab="day">每日紀錄</button>
+      <button class="btn tab" data-tab="stats">整體統計</button>
+      <button class="btn tab" data-tab="list">所有紀錄</button>
+    </div>
+    <div id="pane"></div>`;
+
+  $('#applyF').onclick = () => { readFilters(); show(); };
+  $('#resetF').onclick = () => { FILTERS = { school_year: '115', status: 'final' }; ui(); };
+  document.querySelectorAll('.tab').forEach(b => b.onclick = () => { TAB = b.dataset.tab; show(); });
+  $('#dlgClose').onclick = () => $('#dlg').close();
+  $('#dlgPdf').onclick = async () => {
+    try {
+      const j = await API.call('pdf', { record_id: CUR.id });
+      downloadB64(j.base64, j.filename);
+    } catch (e) { toast(e.message); }
+  };
+  show();
+}
+
+function readFilters() {
+  document.querySelectorAll('[data-f]').forEach(el => { FILTERS[el.dataset.f] = el.value; });
+}
+
+async function show() {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('primary', b.dataset.tab === TAB));
+  const pane = $('#pane');
+  pane.innerHTML = '<section class="card"><p class="muted">載入中…</p></section>';
+  try {
+    if (TAB === 'day') await dayView(pane);
+    else if (TAB === 'list') await listView(pane);
+    else await statsView(pane);
+  } catch (e) {
+    pane.innerHTML = `<section class="card">${esc(e.message)}</section>`;
+  }
+}
+
+/* ========== 每日紀錄（個別回答） ========== */
+
+async function dayView(pane) {
+  const day = DAY || todayStr();
+  pane.innerHTML = `
+    <section class="card">
+      <label>觀課日期</label>
+      <input type="date" id="dayPick" value="${day}">
+    </section>
+    <section class="card" id="dayList"><p class="muted">載入中…</p></section>`;
+  $('#dayPick').onchange = e => { DAY = e.target.value; show(); };
+
+  const j = await API.call('admin.list', { ...FILTERS, date: day, dateFrom: '', dateTo: '' });
+  $('#dayList').innerHTML = `<h2>${day}　共 ${j.rows.length} 筆</h2>${rowsHtml(j.rows)}`;
+  bindRows();
+}
+
+/* ========== 所有紀錄 ========== */
+
+async function listView(pane) {
+  const j = await API.call('admin.list', FILTERS);
+  pane.innerHTML = `<section class="card"><h2>符合條件的紀錄　共 ${j.rows.length} 筆</h2>${rowsHtml(j.rows)}</section>`;
+  bindRows();
+}
+
+function rowsHtml(rows) {
+  if (!rows.length) return '<p class="muted">沒有符合的紀錄</p>';
+  return rows.map(r => `
+    <div class="rec" data-id="${esc(r.record_id)}">
+      <div>
+        <b>${esc(r.teacher)}｜${esc((FORMS[r.form] || {}).name || '')}</b>
+        <div class="muted small">${esc(r.date)}　${esc(r.school)}　${esc(r.subject)}　${esc(r.unit)}　${r.status === 'final' ? '已完成' : '草稿'}</div>
+      </div>
+      <span>›</span>
+    </div>`).join('');
+}
+
+function bindRows() {
+  document.querySelectorAll('.rec[data-id]').forEach(el => el.onclick = () => openRec(el.dataset.id));
+}
+
+async function openRec(id) {
+  try {
+    const j = await API.call('admin.record', { record_id: id });
+    CUR = j.record;
+    $('#dlgBody').innerHTML = renderRecordView(CUR);
+    $('#dlgPdf').disabled = CUR.status !== 'final';
+    $('#dlg').showModal();
+  } catch (e) { toast(e.message); }
+}
+
+/* ========== 整體統計（彙整所有回答） ========== */
+
+async function statsView(pane) {
+  const j = await API.call('admin.stats', FILTERS);
+  LAST_STATS = j;
+  const s = j.summary;
+
+  const modeLines = Object.entries(j.modes).map(([k, v]) => `<p class="bar-line">${esc(k)}　${v} 筆</p>`).join('')
+    || '<p class="muted">無資料</p>';
+
+  const distTxt = x => x.nNum
+    ? [0, 1, 2, 3, 4, 5].map(n => `${n}：${(x.dist && x.dist[n]) || 0}`).join('　')
+    : '—';
+  const lightTxt = x => (x.lights && (x.lights.green + x.lights.yellow + x.lights.red))
+    ? `🟢${x.lights.green}　🟡${x.lights.yellow}　🔴${x.lights.red}` : '—';
+
+  const byKey = Object.fromEntries(j.items.map(x => [x.form + '|' + x.item_id, x]));
+
+  const tables = Object.keys(FORMS).map(f => {
+    const rows = FORMS[f].sections.flatMap(sec => sec.items.map(it => {
+      const x = byKey[f + '|' + it.id];
+      const c = byKey[f + '|' + it.id + '_chk'];
+      if (!x && !c) return '';
+      const x2 = x || {};
+      const done = x2.doneRate != null ? x2.doneRate : (c ? c.doneRate : null);
+      return `<tr>
+        <td>${esc(sec.label)}</td>
+        <td>${esc(it.label)}</td>
+        <td>${x2.n ?? '—'}</td>
+        <td>${x2.mean ?? '—'}</td>
+        <td class="small">${distTxt(x2)}</td>
+        <td class="small">${lightTxt(x2)}</td>
+        <td>${done != null ? done + '%' : '—'}</td>
+      </tr>`;
+    })).join('');
+    if (!rows.trim()) return '';
+    return `
+      <section class="card">
+        <h2>${esc(FORMS[f].name)}</h2>
+        <div class="tbl-wrap"><table>
+          <tr><th>面向</th><th>項目</th><th>筆數</th><th>平均</th><th>分布（0–5）</th><th>燈號</th><th>達成率</th></tr>
+          ${rows}
+        </table></div>
+      </section>`;
+  }).join('');
+
+  const com = j.comments.length
+    ? j.comments.map(c => `
+        <div class="comment">
+          <div class="muted small">${esc(c.date)}｜${esc(c.teacher)}｜${esc((FORMS[c.form] || {}).name || '')}｜${esc(COMMENT_LABEL[c.key] || c.key)}</div>
+          <div>${esc(c.text)}</div>
+        </div>`).join('')
+    : '<p class="muted">無綜合意見</p>';
+
+  pane.innerHTML = `
+    <section class="card">
+      <h2>整體統計</h2>
+      <span class="pill-stat">紀錄 ${s.records} 筆</span>
+      <span class="pill-stat">教師 ${s.teachers} 人</span>
+      <span class="pill-stat">觀課日 ${s.days} 天</span>
+      <h3>教學模式分布</h3>
+      ${modeLines}
+      <div style="margin-top:12px"><button class="btn" id="csvBtn">下載統計 CSV</button></div>
+    </section>
+    ${tables || '<section class="card"><p class="muted">此條件下沒有評量資料</p></section>'}
+    <section class="card"><h2>綜合意見彙整</h2>${com}</section>`;
+
+  $('#csvBtn').onclick = exportCsv;
+}
+
+function exportCsv() {
+  if (!LAST_STATS) return;
+  const head = ['form', 'item_id', 'label', 'n', 'mean', 'dist', 'lights', 'doneRate'];
+  const lines = [head.join(',')].concat(LAST_STATS.items.map(x => [
+    x.form, x.item_id, x.label, x.n ?? '', x.mean ?? '',
+    JSON.stringify(x.dist || {}), JSON.stringify(x.lights || {}), x.doneRate ?? ''
+  ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')));
+  saveText('觀課統計.csv', '﻿' + lines.join('\n'), 'text/csv;charset=utf-8');
+}
+</script>
+</body>
+</html>
