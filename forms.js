@@ -40,8 +40,7 @@ const COMMENTS = [
   { key: 'other', label: '其他意見' }
 ];
 
-/* 六大面向檢核圖（共用）：三張表單都以「補充說明」方式呈現，六大面向的 k1–k15 本身即為檢核項目。
-   數據解讀建議僅供填寫時參考，不影響計分。 */
+/* 六大面向檢核圖（補充說明）：顯示於「115 觀課紀錄表」與「數位與教學指引檢核表」內，僅供填寫時參考，不計分、不儲存。 */
 const SIX_DIM = [
   { key: 'a1', label: '1. 核心教學活動', items: [
     { id: 'k1', type: 'check', label: '授課內容是否融入「概念評量」或即時測驗？', hint: '動態評量與成績提升具顯著相關性（r=0.079）。' },
@@ -57,7 +56,7 @@ const SIX_DIM = [
     { id: 'k7', type: 'check', label: '「教學期」課程是否進行知識節點診斷？', hint: '運用診斷工具作為補救教學與個別補強的基礎。' }
   ]},
   { key: 'a4', label: '4. 教學互動經營', items: [
-    { id: 'k8', type: 'check', label: '課堂中安排 1–2 次即時互動（如 Kahoot、Padlet 等）？', hint: '短時高頻互動能有效活化教學氣氛。' },
+    { id: 'k8', type: 'check', label: '課堂中安排 1–2 次即時互動（如 Kahoot、Padlet 等）？', hint: '數據顯示短時高頻互動能有效活化教學氣氛。' },
     { id: 'k9', type: 'check', label: '利用平台進行小組即時討論或同步任務？', hint: '補強自動課程營造愉悅的互動氛圍。' }
   ]},
   { key: 'a5', label: '5. 課程任務設計', items: [
@@ -71,6 +70,11 @@ const SIX_DIM = [
     { id: 'k15', type: 'check', label: '針對數位學習深度投入者：是否引導至同儕教學？', hint: '安排擔任數位學伴或進行反思任務，將高投入轉化為深層學習。' }
   ]}
 ];
+const SUPPLEMENT = {
+  title: '六大面向檢核圖（補充說明，供參考，不計分）',
+  source: '本補充依屏東縣數位學習推動辦公室（屏東縣數辦）所提供之「數位教學檢核與數據解讀建議」指南整理，僅供填寫觀課紀錄時參考。',
+  dims: SIX_DIM
+};
 
 const FORMS = {
   /* ---------- 115 觀課紀錄表（屏東縣群校數位學習） ---------- */
@@ -80,7 +84,6 @@ const FORMS = {
     hasDevice: true,
     modes: MODES,
     comments: COMMENTS,
-    supplement: SIX_DIM,
     sections: [
       { key: 'self', label: '學生自學（個人）', items: [
         { id: 'self1', type: 'score', label: '完成預習，並知道學習目標', hint: '學生進入課堂時能否說出本節目標？' },
@@ -105,7 +108,8 @@ const FORMS = {
         { id: 'tch4', type: 'score', label: '進行學習總結及延伸', hint: '課程結束時是否有總結與延伸問題？' },
         { id: 'tch5', type: 'score', label: '指派課後任務，引導自主學習', hint: '任務是否清楚，學生能否在課後獨立完成？' }
       ]}
-    ]
+    ],
+    supplement: SUPPLEMENT
   },
 
   /* ---------- 數位與教學指引檢核表（附件一＋附件二） ---------- */
@@ -115,7 +119,6 @@ const FORMS = {
     checkText: '已完成此項',
     legend: '🟢 綠燈：鼓勵使用（AI 作為學習輔助工具）　🟡 黃燈：可使用但需查核並標示　🔴 紅燈：不可使用（違反 AI 倫理與學術誠信）',
     comments: COMMENTS,
-    supplement: SIX_DIM,
     sections: [
       { key: 'prep', label: '課程上課之備課階段', items: [
         { id: 'ai_p1', type: 'light', label: '教材準備', hint: '確認並準備所有數位教材和資源，如影片、互動式教學工具等。' },
@@ -160,15 +163,7 @@ const FORMS = {
           { id: 'ai_s13', type: 'matrix', label: '課前課中課後｜10.其他' }
         ]
       }
-    ]
-  },
-
-  /* ---------- 六大面向檢核圖（獨立表單，檢核項目即 SIX_DIM） ---------- */
-  f6: {
-    name: '六大面向檢核圖',
-    hintLabel: '數據解讀建議',
-    checkText: '達成',
-    comments: COMMENTS,
-    sections: SIX_DIM
+    ],
+    supplement: SUPPLEMENT
   }
 };

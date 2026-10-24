@@ -202,16 +202,16 @@ function renderEditor() {
 }
 
 // 六大面向檢核圖：唯讀補充說明，供填寫時參考，不計分、不儲存
-function renderSupplement(dims) {
-  const body = dims.map(d => `
+function renderSupplement(sup) {
+  const body = sup.dims.map(d => `
     <h3>${esc(d.label)}</h3>
     <ul class="sup-list">
       ${d.items.map(it => `<li><b>${esc(it.label)}</b><br><span class="muted small">數據解讀建議：${esc(it.hint)}</span></li>`).join('')}
     </ul>`).join('');
   return `
     <details class="card sup">
-      <summary><b>六大面向檢核圖（補充說明，供參考，不計分）</b></summary>
-      <p class="muted small">依屏東縣數位學習推動辦公室之數位教學檢核面向整理，填寫時可對照參考。</p>
+      <summary><b>${esc(sup.title)}</b></summary>
+      <p class="muted small">${esc(sup.source)}</p>
       ${body}
     </details>`;
 }
@@ -223,7 +223,7 @@ function itemHtml(sec, it, F) {
     ctrl = `<div class="scores">${[0, 1, 2, 3, 4, 5].map(n =>
       `<button class="score ${S.vals[id] === n ? 'on' : ''}" data-score="${id}" data-n="${n}">${n}</button>`).join('')}</div>`;
   } else if (it.type === 'check') {
-    ctrl = `<label class="check"><input type="checkbox" data-check="${id}" ${S.vals[id] ? 'checked' : ''}> ${esc(F.checkText || '符合')}</label>`;
+    ctrl = `<label class="check"><input type="checkbox" data-check="${id}" ${S.vals[id] ? 'checked' : ''}> ${esc(it.checkLabel || F.checkText || '符合')}</label>`;
   } else if (it.type === 'light') {
     ctrl = `<div class="lights">${LIGHTS.map(l =>
       `<button class="light ${S.vals[id] === l.k ? 'on' : ''}" data-light="${id}" data-k="${l.k}">${l.e} ${l.t}</button>`).join('')}</div>
@@ -234,7 +234,7 @@ function itemHtml(sec, it, F) {
       `<button class="pill ${arr.includes(c.k) ? 'on' : ''}" data-mx="${id}" data-k="${c.k}">${c.k}</button>`).join('')}</div>`;
   }
   const tip = it.hint ? `<button class="tipbtn" data-tip aria-label="說明">ⓘ</button>` : '';
-  const tipBox = it.hint ? `<div class="tip" hidden>${esc(F.hintLabel || '觀察重點')}：${esc(it.hint)}</div>` : '';
+  const tipBox = it.hint ? `<div class="tip" hidden>${esc(it.hintLabel || F.hintLabel || '觀察重點')}：${esc(it.hint)}</div>` : '';
   return `
     <div class="item">
       <div class="item-top"><span class="item-name">${esc(it.label)}</span>${tip}</div>
